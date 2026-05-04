@@ -1,0 +1,368 @@
+from flask import Flask, request, render_template_string, session
+import random
+
+app = Flask(__name__)
+app.secret_key = "rps-secret-key-2024"
+
+CHOICES = ["Rock", "Paper", "Scissors"]
+EMOJIS = {"Rock": "🪨", "Paper": "📄", "Scissors": "✂️"}
+
+def get_result(user, computer):
+    if user == computer:
+        return "tie"
+    if (user == "Rock" and computer == "Scissors") or \
+       (user == "Scissors" and computer == "Paper") or \
+       (user == "Paper" and computer == "Rock"):
+        return "win"
+    return "lose"
+
+TEMPLATE = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Rock Paper Scissors</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 40%, #0f3460 100%);
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    .card {
+      background: rgba(255, 255, 255, 0.05);
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 24px;
+      padding: 50px 60px;
+      text-align: center;
+      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.5);
+      max-width: 560px;
+      width: 90%;
+    }
+
+    h1 {
+      font-size: 2.4rem;
+      font-weight: 800;
+      color: #fff;
+      margin-bottom: 8px;
+      letter-spacing: -0.5px;
+    }
+
+    .subtitle {
+      color: rgba(255,255,255,0.45);
+      font-size: 0.95rem;
+      margin-bottom: 32px;
+    }
+
+    /* ── Scoreboard ── */
+    .scoreboard {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 0;
+      background: rgba(0,0,0,0.25);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 16px;
+      overflow: hidden;
+      margin-bottom: 36px;
+    }
+
+    .score-cell {
+      flex: 1;
+      padding: 16px 10px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      border-right: 1px solid rgba(255,255,255,0.07);
+    }
+
+    .score-cell:last-child { border-right: none; }
+
+    .score-label {
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 1.8px;
+      color: rgba(255,255,255,0.35);
+    }
+
+    .score-value {
+      font-size: 2rem;
+      font-weight: 800;
+      line-height: 1;
+    }
+
+    .score-cell.wins  .score-value { color: #58d68d; }
+    .score-cell.loses .score-value { color: #e96c6c; }
+    .score-cell.ties  .score-value { color: #f7dc6f; }
+    .score-cell.games .score-value { color: rgba(255,255,255,0.6); }
+
+    .win-rate {
+      font-size: 0.72rem;
+      color: rgba(255,255,255,0.3);
+      margin-top: 1px;
+    }
+
+    /* ── Buttons ── */
+    .choices-label {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: rgba(255,255,255,0.35);
+      margin-bottom: 18px;
+    }
+
+    .buttons {
+      display: flex;
+      gap: 16px;
+      justify-content: center;
+      margin-bottom: 36px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      padding: 20px 28px;
+      border: none;
+      border-radius: 16px;
+      font-size: 1rem;
+      font-weight: 600;
+      color: #fff;
+      cursor: pointer;
+      transition: transform 0.18s ease, box-shadow 0.18s ease;
+      min-width: 110px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .btn::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: rgba(255,255,255,0);
+      transition: background 0.2s;
+    }
+
+    .btn:hover::after { background: rgba(255,255,255,0.12); }
+    .btn:hover { transform: translateY(-5px) scale(1.04); box-shadow: 0 14px 30px rgba(0,0,0,0.35); }
+    .btn:active { transform: translateY(-2px) scale(1.01); }
+
+    .btn-rock     { background: linear-gradient(135deg, #e96c6c, #c0392b); box-shadow: 0 6px 20px rgba(192,57,43,0.4); }
+    .btn-paper    { background: linear-gradient(135deg, #5dade2, #2980b9); box-shadow: 0 6px 20px rgba(41,128,185,0.4); }
+    .btn-scissors { background: linear-gradient(135deg, #58d68d, #1e8449); box-shadow: 0 6px 20px rgba(30,132,73,0.4); }
+
+    .btn .emoji { font-size: 2.2rem; }
+
+    /* ── Result ── */
+    .result {
+      animation: fadeSlideIn 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 16px;
+      padding: 28px 24px;
+      margin-bottom: 20px;
+    }
+
+    @keyframes fadeSlideIn {
+      from { opacity: 0; transform: translateY(18px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .matchup {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 18px;
+      margin-bottom: 18px;
+    }
+
+    .pick { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+    .pick .big-emoji { font-size: 3rem; }
+    .pick .label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 1.5px; color: rgba(255,255,255,0.4); }
+    .pick .name  { font-size: 0.95rem; font-weight: 600; color: rgba(255,255,255,0.85); }
+    .vs { font-size: 1.1rem; font-weight: 800; color: rgba(255,255,255,0.25); }
+
+    .divider { height: 1px; background: rgba(255,255,255,0.08); margin: 22px 0; }
+
+    .verdict { font-size: 1.7rem; font-weight: 800; margin-bottom: 4px; }
+    .verdict.win  { color: #58d68d; text-shadow: 0 0 20px rgba(88,214,141,0.5); }
+    .verdict.lose { color: #e96c6c; text-shadow: 0 0 20px rgba(233,108,108,0.5); }
+    .verdict.tie  { color: #f7dc6f; text-shadow: 0 0 20px rgba(247,220,111,0.5); }
+
+    .verdict-sub { font-size: 0.88rem; color: rgba(255,255,255,0.4); }
+    .play-again  { display: inline-block; margin-top: 4px; font-size: 0.82rem; color: rgba(255,255,255,0.35); }
+
+    /* ── Reset button ── */
+    .reset-form { margin-top: 4px; }
+
+    .btn-reset {
+      background: none;
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 10px;
+      color: rgba(255,255,255,0.35);
+      font-size: 0.78rem;
+      padding: 8px 20px;
+      cursor: pointer;
+      transition: all 0.2s;
+      letter-spacing: 0.5px;
+    }
+
+    .btn-reset:hover {
+      border-color: rgba(255,255,255,0.35);
+      color: rgba(255,255,255,0.7);
+      background: rgba(255,255,255,0.06);
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Rock Paper Scissors</h1>
+    <p class="subtitle">Choose your weapon and challenge the machine</p>
+
+    <!-- Scoreboard -->
+    <div class="scoreboard">
+      <div class="score-cell wins">
+        <span class="score-label">Wins</span>
+        <span class="score-value">{{ score.wins }}</span>
+      </div>
+      <div class="score-cell loses">
+        <span class="score-label">Losses</span>
+        <span class="score-value">{{ score.losses }}</span>
+      </div>
+      <div class="score-cell ties">
+        <span class="score-label">Ties</span>
+        <span class="score-value">{{ score.ties }}</span>
+      </div>
+      <div class="score-cell games">
+        <span class="score-label">Win Rate</span>
+        <span class="score-value">{{ win_rate }}%</span>
+      </div>
+    </div>
+
+    <!-- Choice buttons -->
+    <p class="choices-label">Your move</p>
+    <form method="POST">
+      <input type="hidden" name="action" value="play"/>
+      <div class="buttons">
+        <button class="btn btn-rock"     name="choice" value="Rock">
+          <span class="emoji">🪨</span> Rock
+        </button>
+        <button class="btn btn-paper"    name="choice" value="Paper">
+          <span class="emoji">📄</span> Paper
+        </button>
+        <button class="btn btn-scissors" name="choice" value="Scissors">
+          <span class="emoji">✂️</span> Scissors
+        </button>
+      </div>
+    </form>
+
+    <!-- Result -->
+    {% if result %}
+    <div class="result">
+      <div class="matchup">
+        <div class="pick">
+          <span class="label">You</span>
+          <span class="big-emoji">{{ emojis[user_choice] }}</span>
+          <span class="name">{{ user_choice }}</span>
+        </div>
+        <span class="vs">VS</span>
+        <div class="pick">
+          <span class="label">Computer</span>
+          <span class="big-emoji">{{ emojis[computer_choice] }}</span>
+          <span class="name">{{ computer_choice }}</span>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      {% if result == "win" %}
+        <div class="verdict win">🏆 You Win!</div>
+        <p class="verdict-sub">{{ user_choice }} beats {{ computer_choice }}</p>
+      {% elif result == "lose" %}
+        <div class="verdict lose">💀 You Lose!</div>
+        <p class="verdict-sub">{{ computer_choice }} beats {{ user_choice }}</p>
+      {% else %}
+        <div class="verdict tie">🤝 It's a Tie!</div>
+        <p class="verdict-sub">Great minds think alike</p>
+      {% endif %}
+
+      <p class="play-again">↑ Pick again to play another round</p>
+    </div>
+    {% endif %}
+
+    <!-- Reset -->
+    <form method="POST" class="reset-form">
+      <input type="hidden" name="action" value="reset"/>
+      <button class="btn-reset" type="submit">↺ Reset Score</button>
+    </form>
+
+  </div>
+</body>
+</html>
+"""
+
+@app.route("/", methods=["GET", "POST"])
+def index():
+    # Init session score
+    if "wins" not in session:
+        session["wins"] = 0
+        session["losses"] = 0
+        session["ties"] = 0
+
+    result = None
+    user_choice = None
+    computer_choice = None
+
+    if request.method == "POST":
+        action = request.form.get("action")
+
+        if action == "reset":
+            session["wins"] = 0
+            session["losses"] = 0
+            session["ties"] = 0
+
+        elif action == "play":
+            user_choice = request.form.get("choice")
+            if user_choice in CHOICES:
+                computer_choice = random.choice(CHOICES)
+                result = get_result(user_choice, computer_choice)
+
+                if result == "win":
+                    session["wins"] += 1
+                elif result == "lose":
+                    session["losses"] += 1
+                else:
+                    session["ties"] += 1
+                session.modified = True
+
+    total = session["wins"] + session["losses"] + session["ties"]
+    win_rate = round((session["wins"] / total) * 100) if total > 0 else 0
+
+    score = {
+        "wins":   session["wins"],
+        "losses": session["losses"],
+        "ties":   session["ties"],
+    }
+
+    return render_template_string(
+        TEMPLATE,
+        result=result,
+        user_choice=user_choice,
+        computer_choice=computer_choice,
+        emojis=EMOJIS,
+        score=score,
+        win_rate=win_rate,
+    )
+
+if __name__ == "__main__":
+    app.run(debug=True)
